@@ -1,29 +1,33 @@
-
 ######################### PASS TWO #########################
 
 '''
 pass two does real translation and assembling
 and writes both object and assembly listing files
 '''
-
-from passOne import SymTable
-from utilities import opTable
-from passOne import linesListWithData
+import util
 
 endRecord = False
 hasError = False
 
-'''
-assembles each line of instructions and
-produces its object code
-'''
 def assemble():
-    global linesListWithData
-    lines = linesListWithData
+    """
+    assembles each line of instructions and
+    produces its object code
+    """
+
+    lines = util.linesListWithData
+
+    # check for errors first before generating object code
+    validateErrors()
 
     for line in lines:
         # skip if comment
         if (line[0] == "."):
+            continue
+
+        # skip if line has errors
+        address = line[0].rstrip()
+        if (len(util.errorsTable[address]) > 0):
             continue
 
         # initialize object code
@@ -42,9 +46,8 @@ def assemble():
         # normal directive
         else:
             # make sure operation is present in operations table
-            if directive in opTable:
-                opCode = opTable[directive]
-
+            if directive in util.opTable:
+                opCode = util.opTable[directive]
 
         ## get address
         if opCode is not None:
@@ -54,10 +57,10 @@ def assemble():
             # indexing is used
             if index != -1:
                 temp = operand[:index]
-                address = SymTable[temp]
+                address = util.symTable[temp]
             # no indexing
             else:
-                address = SymTable[operand]
+                address = util.symTable[operand]
 
             # if indexing is used add value of 'x' bit to address
             if ",x" in operand:
@@ -98,28 +101,29 @@ def assemble():
         ## add object code to line
         line.append(objCode)
 
-    linesListWithData = lines
+    util.linesListWithData = lines
 
     writeObjFile()
     writeListFile()
 
-'''
-makes sure that num has a length of limit
-'''
 def fixHexString(num, limit):
+    """
+    makes sure that num has a length of limit
+    """
+
     zero = "0"
     count = limit - len(num)
     num = (zero * count) + num
     return num
 
-
-'''
-writes formatted object code to file
-'''
 def writeObjFile():
+    """
+    writes formatted object code to file
+    """
+
     file = open("OBJFILE", "w+")
 
-    lines = linesListWithData
+    lines = util.linesListWithData
 
     # write header record
     progName = lines[0][1][:-2]
@@ -136,6 +140,11 @@ def writeObjFile():
 
     file.write(headerStr)
 
+    # check if program has errors no text records are generated
+    global hasError
+    if hasError:
+        return
+
     # write text records
     writeTextRecord(file, lines[1:])
 
@@ -144,10 +153,11 @@ def writeObjFile():
     file.write(endRecordStr)
     file.close()
 
-'''
-recursive method that writes text records
-'''
 def writeTextRecord(file, lines):
+    """
+    recursive method that writes text records
+    """
+
     # finished writing records
     if lines == []:
         # set global boolean and return
@@ -213,19 +223,29 @@ def writeTextRecord(file, lines):
             # terminate and start a new record
             writeTextRecord(file, lines[i + 1:])
 
-'''
-writes list file
-'''
 def writeListFile():
+    """
+    writes list file
+    """
+
     file = open("LISFILE", "w+")
 
-    lines = linesListWithData
+    lines = util.linesListWithData
 
     for line in lines:
-
         # if comment write as is
         if line[0] == ".":
             file.write(line + "\n")
+            continue
+
+        # if line has errors print line as is with its errors
+        address = line[0]
+        if (len(util.errorsTable[address]) > 0):
+            address, label, directive, operand = line
+            lineStr = address + (8 * " ") + label + " " + directive + " " + operand + "\n"
+            file.write(lineStr)
+            for msg in util.errorsTable[address]:
+                file.write("\t\t******* " + msg + "\n")
             continue
 
         # get parts of line
@@ -269,45 +289,94 @@ def writeListFile():
 
     file.close()
 
-'''
-still not done
-'''
-def validateError():
-    errorsTable = {}
+def validateErrors():
+    """
+    still not done
+    """
 
-    lines = linesListWithData
+    global hasError
 
+    lines = util.linesListWithData
+
+    # check if anything before "start"
     if lines[0][2].strip().lower() != "start":
-        errorsTable[lines[0][0]] = ["statement should not precede start statement",
-                                    "missing or misplaced start statement"]
+        util.errorsTable[lines[0][0]] = ["statement should not precede start statement",
+                                         "missing or misplaced start statement"]
+        hasError = True
 
     for line in lines:
-        address, label, directive, operand, objCode = line
+        # skip if comment
+        if line[0] == ".":
+            continue
+
+        address, label, directive, operand = line
         errorList = []
+
+        ## check directive errors
+        directive = directive.rstrip().lower()
+        # directive is empty
         if (directive == "") or (directive is None):
             errorList.append("missing operation code")
-        elif directive not in opTable.keys():
+        # pass if directive is a reserved operation with no hexadecimal code
+        elif (directive in ["start", "byte", "word", "resw", "resb", "end"]):
+            pass
+        # directive isn't in operations table
+        elif directive not in util.opTable.keys():
             errorList.append("unrecognized operation code")
             errorList.append("illegal operation code format")
-        if moreThanOnce(label):
-            errorList.append("duplicate label definition")
-        if " " in operand.rstrip() or operand not in SymTable.keys:
+
+        ## check label errors
+        if (label.rstrip() != ""):
+            # duplicate label found
+            if moreThanOnce(label):
+                errorList.append("duplicate label definition")
+        # label contains spaces
+        if (" " in label.rstrip()):
+            errorList.append("illegal format in label field")
+        # label should be defined but not
+        elif (directive in ["byte", "word", "resw", "resb"]) and (label.rstrip() == ""):
+            errorList.append("illegal format in label field")
+
+        ## check operand errors
+        operand = operand.rstrip().lower()
+        index = operand.find(",")
+        if index != -1:
+            operand = operand[:index]
+        # pass if operand is string
+        if (operand[:2] in ["c'", "x'"]) and (operand[-1] == '\'') and (directive == "byte"):
+            pass
+        # operand should contain a number
+        elif (not operand[0].isdigit()) and (directive in ["word", "resw", "resb"]):
+            errorList.append("illegal operand field")
+        # operand contains spaces or not found in symbol table or should not be a number
+        elif ((" " in operand) or (operand not in util.symTable.keys()) or (operand[0].isdigit())) and \
+                (directive not in ["word", "resw", "resb", "start", "end"]):
             errorList.append("missing or misplaced operand in instruction")
             errorList.append("illegal operand field")
 
-        errorsTable[address] = errorList
+        # check if line has errors
+        if (len(errorList) > 0):
+            # set global variable
+            hasError = True
 
+        util.errorsTable[address] = errorList
+
+    # check if anything after "end"
     if lines[-1][2].strip().lower() != "end":
-        errorsTable[lines[-1][0]] = ["statement should not follow end statement", "missing or misplaced end statement"]
+        util.errorsTable[lines[-1][0]] = ["statement should not follow end statement",
+                                          "missing or misplaced end statement"]
+        hasError = True
 
-'''
-still not done
-'''
 def moreThanOnce(symbol):
+    """
+    checks if label is present
+    more than once in code
+    """
+
     counter = 0
-    lines = linesListWithData
+    lines = util.linesListWithData
     for line in lines:
-        if line[1].strip().lower() == symbol:
+        if line[1].strip().lower() == symbol.strip().lower():
             counter += 1
 
     return counter > 1
