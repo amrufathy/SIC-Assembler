@@ -1,4 +1,3 @@
-
 ######################### PASS ONE #########################
 
 '''
@@ -6,24 +5,23 @@ pass one assigns address to each instruction
 and constructs a symbol table
 '''
 
-from utilities import SymTable
+import util
 
-linesListWithData = []
-
-
-'''
-splits an instruction string and returns it
-as list of strings
-'''
 def stringInstructionsToLists(instruction):
+    """
+    splits an instruction string and returns it
+    as list of strings
+    """
+
     return [instruction[0:8], instruction[9:17], instruction[17:36]]
 
-'''
-reads the srcfile, saves all the code as lists of
-string using the function 'stringInstructionsToLists'
-then calls 'assignAddresses'
-'''
 def readFromFile():
+    """
+    reads the srcfile, saves all the code as lists of
+    string using the function 'stringInstructionsToLists'
+    then calls 'assignAddresses'
+    """
+
     file = open("SRCFILE", "r+")
 
     # get line by line
@@ -33,7 +31,7 @@ def readFromFile():
 
     for line in lines:
         # if line is comment put as is
-        if line[0] == ".":
+        if line[0] == '.':
             linesList.append(line)
         # process normal line
         else:
@@ -41,10 +39,10 @@ def readFromFile():
 
     assignAddresses(linesList)
 
-'''
-assigns an address to each instruction
-'''
 def assignAddresses(linesList):
+    """
+    assigns an address to each instruction
+    """
 
     # get start address as hex number
     startingAddress = int(linesList[0][2], 16)
@@ -52,7 +50,7 @@ def assignAddresses(linesList):
 
     for line in linesList:
         # skip if comment
-        if line[0] == ".":
+        if line[0] == '.':
             continue
 
         # if "start" put address as is
@@ -77,18 +75,16 @@ def assignAddresses(linesList):
                 currentAddress += 3
 
     # update global list to be used later
-    global linesListWithData
-    linesListWithData = linesList
+    util.linesListWithData = linesList
 
     makeSymTable()
 
-
 def makeSymTable():
-    lines = linesListWithData
+    lines = util.linesListWithData
 
     for line in lines:
         address = line[0]
-        label = line[1].strip().lower()
-        # if symbol not empty and not already present in symbol table then add
-        if (label != '') and (label not in SymTable.keys):
-            SymTable[label] = address
+        label = line[1].rstrip().lower()
+        # if symbol not empty and not already present in symbol table and doesn't contain spaces, then add
+        if (label != '') and (label not in util.symTable.keys()) and (' ' not in label):
+            util.symTable[label] = address
